@@ -1,0 +1,91 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: jobpilot-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "YourStrong!Passw0rd"
+      MSSQL_PID: Developer
+    ports:
+      - "${SQLSERVER_PORT:-1433}:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: jobpilot-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+    container_name: jobpilot-backend
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: "mssql+pyodbc://sa:YourStrong!Passw0rd@sqlserver:1433/jobpilot_ai?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      UPLOAD_DIR: "/app/storage/uploads"
+      APP_AUTO_CREATE_TABLES: "true"
+      BACKEND_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT:-3000}"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend/storage:/app/storage
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: ./backend
+    container_name: jobpilot-worker
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: "mssql+pyodbc://sa:YourStrong!Passw0rd@sqlserver:1433/jobpilot_ai?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      UPLOAD_DIR: "/app/storage/uploads"
+    volumes:
+      - ./backend/storage:/app/storage
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.core.celery_app.celery_app worker --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: jobpilot-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: "/api"
+      BACKEND_INTERNAL_URL: "http://backend:8000"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    command: npm run dev -- --hostname 0.0.0.0
+
+volumes:
+  sqlserver_data:

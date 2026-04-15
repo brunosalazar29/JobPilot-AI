@@ -1,0 +1,6 @@
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+storage
+alembic/versions/__pycache__
