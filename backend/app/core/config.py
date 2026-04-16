@@ -24,8 +24,9 @@ class Settings(BaseSettings):
     playwright_headless: bool = Field(default=True, alias="PLAYWRIGHT_HEADLESS")
     enable_mock_jobs: bool = Field(default=False, alias="ENABLE_MOCK_JOBS")
     enable_arbeitnow_source: bool = Field(default=True, alias="ENABLE_ARBEITNOW_SOURCE")
+    enable_remotive_source: bool = Field(default=True, alias="ENABLE_REMOTIVE_SOURCE")
     job_source_file: str | None = Field(default=None, alias="JOB_SOURCE_FILE")
-    application_match_threshold: int = Field(default=55, alias="APPLICATION_MATCH_THRESHOLD")
+    application_match_threshold: int = Field(default=5, alias="APPLICATION_MATCH_THRESHOLD")
     auto_apply_enabled: bool = Field(default=True, alias="AUTO_APPLY_ENABLED")
     auto_submit_applications: bool = Field(default=False, alias="AUTO_SUBMIT_APPLICATIONS")
 

@@ -91,7 +91,7 @@ def cv_pipeline_task(task_run_id: int, resume_id: int) -> dict:
             data={"sources": [adapter.source_name for adapter in adapters]},
         )
         filters = build_filters_from_profile(profile)
-        jobs = search_jobs(db, filters) if adapters else []
+        jobs = search_jobs(db, filters, profile=profile) if adapters else []
 
         if not should_continue_search(db, resume.user_id):
             append_task_log(db, task_run, "Search run stopped after job collection")
@@ -120,6 +120,7 @@ def cv_pipeline_task(task_run_id: int, resume_id: int) -> dict:
             data={"match_count": len(matches), "threshold": settings.application_match_threshold},
         )
         created_applications = []
+        tracked_applications = 0
         for match in matches:
             if match.score < settings.application_match_threshold:
                 continue
@@ -130,12 +131,19 @@ def cv_pipeline_task(task_run_id: int, resume_id: int) -> dict:
                 select(Application).where(Application.user_id == resume.user_id, Application.job_id == job.id)
             )
             if existing is not None:
-                if existing.status in {"found", "matched", "pending", "queued"}:
-                    existing.status = "matched"
+                if existing.status not in {"applied", "cancelled"}:
+                    tracked_applications += 1
                     existing.score = match.score
                     existing.resume_id = resume.id
+                    existing.company = job.company
+                    existing.position = job.title
+                    existing.url = job.url
+                if existing.status in {"found", "matched", "pending", "queued"}:
+                    existing.status = "matched"
                     db.add(existing)
                     created_applications.append(existing)
+                else:
+                    db.add(existing)
                 continue
             application = Application(
                 user_id=resume.user_id,
@@ -226,6 +234,7 @@ def cv_pipeline_task(task_run_id: int, resume_id: int) -> dict:
             "jobs_collected": len(jobs),
             "matches_created": len(matches),
             "queue_items_created": len(created_applications),
+            "queue_items_tracked": tracked_applications,
             "auto_apply_tasks": auto_apply_tasks,
             "sources": [adapter.source_name for adapter in adapters],
         }
@@ -238,8 +247,18 @@ def cv_pipeline_task(task_run_id: int, resume_id: int) -> dict:
             )
         elif created_applications:
             mark_search_completed(db, resume.user_id, "La cola fue creada y quedo lista para revision.")
+        elif tracked_applications:
+            mark_search_completed(
+                db,
+                resume.user_id,
+                f"Se encontraron {tracked_applications} vacantes ya registradas que siguen en seguimiento.",
+            )
         else:
-            mark_search_completed(db, resume.user_id, "No se encontraron vacantes compatibles para tu perfil.")
+            mark_search_completed(
+                db,
+                resume.user_id,
+                "No se encontraron vacantes en Peru/Lima ni vacantes remotas internacionales para esta corrida.",
+            )
         log_activity(db, resume.user_id, "resume", "cv_pipeline_completed", resume.original_filename, resume.id, result)
         mark_task_success(db, task_run, result=result)
         return result

@@ -160,10 +160,74 @@ class ArbeitnowJobSearchAdapter(JobSearchAdapter):
         )
 
 
+class RemotiveJobSearchAdapter(JobSearchAdapter):
+    source_name = "remotive"
+    endpoint = "https://remotive.com/api/remote-jobs?limit=100"
+    technical_categories = {
+        "software development",
+        "devops / sysadmin",
+        "qa",
+        "data analysis",
+    }
+
+    def search(self, filters: JobFilter) -> list[JobCreate]:
+        request = urllib.request.Request(self.endpoint, headers={"User-Agent": "Mozilla/5.0 JobPilotAI/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Remotive source failed: {exc}") from exc
+
+        rows = payload.get("jobs", [])
+        if not isinstance(rows, list):
+            raise ValueError("Remotive response did not return a jobs list")
+
+        jobs: list[JobCreate] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            category = str(row.get("category") or "").strip().lower()
+            if category and category not in self.technical_categories:
+                continue
+            jobs.append(self._row_to_job(row))
+        return [job for job in jobs if job_matches_filters(job, filters)]
+
+    def _row_to_job(self, row: dict[str, Any]) -> JobCreate:
+        title = str(row.get("title") or "").strip()
+        company = str(row.get("company_name") or "").strip()
+        description = str(row.get("description") or "").strip()
+        if not title or not company or not description:
+            raise ValueError("Remotive row missing title/company/description")
+
+        external_seed = str(row.get("id") or row.get("url") or f"{company}:{title}")
+        salary_text = str(row.get("salary") or "").strip()
+        tags = normalize_values(row.get("tags") or [])
+        location = str(row.get("candidate_required_location") or "Worldwide").strip()
+
+        return JobCreate(
+            source=self.source_name,
+            external_id=sha1(external_seed.encode("utf-8")).hexdigest(),
+            title=title,
+            company=company,
+            location=location,
+            seniority=infer_seniority_from_title(title),
+            remote_type="remote",
+            salary_min=parse_salary_floor(salary_text),
+            salary_max=parse_salary_ceiling(salary_text),
+            currency="USD",
+            technologies=tags,
+            language_requirements=["english"],
+            description=description,
+            url=str(row.get("url") or "").strip() or None,
+        )
+
+
 def configured_adapters() -> list[JobSearchAdapter]:
     adapters: list[JobSearchAdapter] = []
     if settings.enable_arbeitnow_source:
         adapters.append(ArbeitnowJobSearchAdapter())
+    if settings.enable_remotive_source:
+        adapters.append(RemotiveJobSearchAdapter())
     if settings.job_source_file:
         adapters.append(LocalJsonJobSearchAdapter(settings.job_source_file))
     if settings.enable_mock_jobs:
@@ -189,27 +253,42 @@ def upsert_jobs(db: Session, job_payloads: list[JobCreate]) -> list[Job]:
     return jobs
 
 
-def search_jobs(db: Session, filters: JobFilter) -> list[Job]:
+def search_jobs(db: Session, filters: JobFilter, profile: Any | None = None) -> list[Job]:
     payloads: list[JobCreate] = []
     for adapter in configured_adapters():
         try:
             payloads.extend(adapter.search(filters))
         except Exception:
             continue
+    if not payloads:
+        relaxed_filters = JobFilter(
+            role=None,
+            seniority=None,
+            location=None,
+            remote=None,
+            salary_min=None,
+            technologies=[],
+            language=None,
+        )
+        for adapter in configured_adapters():
+            try:
+                payloads.extend(adapter.search(relaxed_filters))
+            except Exception:
+                continue
+    if profile is not None:
+        payloads = [payload for payload in payloads if job_matches_profile_preferences(payload, profile)]
     return upsert_jobs(db, payloads)
 
 
 def build_filters_from_profile(profile: Any) -> JobFilter:
-    target_roles = profile.target_roles or []
-    role = target_roles[0] if target_roles else None
     return JobFilter(
-        role=role,
-        seniority=profile.seniority,
-        location=profile.location,
-        remote=(profile.preferred_modality or "").lower() == "remote" if profile.preferred_modality else None,
-        salary_min=profile.salary_expectation,
-        technologies=profile.skills or [],
-        language=(profile.languages or [None])[0],
+        role=None,
+        seniority=None,
+        location=None,
+        remote=None,
+        salary_min=None,
+        technologies=[],
+        language=None,
     )
 
 
@@ -219,6 +298,61 @@ def normalize_values(value: Any) -> list[str]:
     if isinstance(value, str):
         return [item.strip() for item in value.split(",") if item.strip()]
     return []
+
+
+def canonical_term(value: str) -> str:
+    normalized = value.strip().lower()
+    replacements = {
+        "node.js": "nodejs",
+        "node js": "nodejs",
+        "angular.js": "angular",
+        "c#": "csharp",
+        "sql server": "sqlserver",
+        "codeigniter 3.0": "codeigniter",
+        "code igniter": "codeigniter",
+        "visual basic": "vb",
+        "rest api": "api",
+    }
+    normalized = replacements.get(normalized, normalized)
+    normalized = re.sub(r"[^a-z0-9+#.]", "", normalized)
+    return normalized
+
+
+def expand_profile_technologies(skills: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for skill in skills:
+        normalized = skill.strip()
+        if not normalized:
+            continue
+        expanded.append(normalized)
+        canonical = canonical_term(normalized)
+        if canonical == "python":
+            expanded.extend(["python", "backend"])
+        elif canonical == "php":
+            expanded.extend(["php", "backend", "laravel"])
+        elif canonical == "nodejs":
+            expanded.extend(["node.js", "nodejs", "javascript", "backend"])
+        elif canonical == "angular":
+            expanded.extend(["angular", "frontend", "javascript"])
+        elif canonical == "csharp":
+            expanded.extend(["c#", ".net", "backend"])
+        elif canonical == "codeigniter":
+            expanded.extend(["codeigniter", "php", "backend"])
+        elif canonical == "lumen":
+            expanded.extend(["lumen", "php", "backend"])
+        elif canonical == "sqlserver":
+            expanded.extend(["sql server", "sql", "database"])
+        elif canonical == "postgresql":
+            expanded.extend(["postgresql", "sql", "database"])
+    unique: list[str] = []
+    seen: set[str] = set()
+    for item in expanded:
+        key = canonical_term(item)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
 
 
 def job_matches_filters(job: JobCreate, filters: JobFilter) -> bool:
@@ -232,11 +366,83 @@ def job_matches_filters(job: JobCreate, filters: JobFilter) -> bool:
         return False
     if filters.salary_min and job.salary_max and job.salary_max < filters.salary_min:
         return False
-    requested = {item.lower() for item in filters.technologies}
-    available = {item.lower() for item in job.technologies}
+    requested = {canonical_term(item) for item in filters.technologies if canonical_term(item)}
+    available = {canonical_term(item) for item in job.technologies if canonical_term(item)}
     if requested and available and not requested.intersection(available):
         return False
     return True
+
+
+def fold_text(value: str | None) -> str:
+    if not value:
+        return ""
+    lowered = value.lower()
+    replacements = str.maketrans(
+        {
+            "á": "a",
+            "é": "e",
+            "í": "i",
+            "ó": "o",
+            "ú": "u",
+            "ü": "u",
+            "ñ": "n",
+        }
+    )
+    return lowered.translate(replacements)
+
+
+def is_remote_job(job: JobCreate) -> bool:
+    remote_type = fold_text(job.remote_type)
+    location = fold_text(job.location)
+    if remote_type in {"remote", "remoto"}:
+        return True
+    remote_markers = ["100% remote", "fully remote", "work from home", "remote-first", "remote", "worldwide"]
+    searchable = location
+    return any(marker in searchable for marker in remote_markers)
+
+
+def is_peru_job(job: JobCreate) -> bool:
+    searchable = fold_text(f"{job.location or ''} {job.title} {job.description}")
+    peru_markers = [
+        " peru",
+        "peru ",
+        "peru,",
+        "peru.",
+        "lima",
+        "san isidro",
+        "miraflores",
+        "surco",
+        "la molina",
+        "callao",
+    ]
+    return any(marker in searchable for marker in peru_markers)
+
+
+def job_matches_profile_preferences(job: JobCreate, profile: Any) -> bool:
+    profile_location = fold_text(getattr(profile, "location", None))
+    if "peru" in profile_location or "lima" in profile_location:
+        return is_peru_job(job) or is_remote_job(job)
+    return True
+
+
+def parse_salary_floor(value: str | None) -> int | None:
+    if not value:
+        return None
+    matches = re.findall(r"(\d[\d,\.]*)", value)
+    if not matches:
+        return None
+    cleaned = matches[0].replace(",", "").replace(".", "")
+    return int(cleaned) if cleaned.isdigit() else None
+
+
+def parse_salary_ceiling(value: str | None) -> int | None:
+    if not value:
+        return None
+    matches = re.findall(r"(\d[\d,\.]*)", value)
+    if len(matches) < 2:
+        return parse_salary_floor(value)
+    cleaned = matches[1].replace(",", "").replace(".", "")
+    return int(cleaned) if cleaned.isdigit() else None
 
 
 def infer_seniority_from_title(title: str) -> str | None:
