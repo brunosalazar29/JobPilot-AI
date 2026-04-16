@@ -93,6 +93,15 @@ def prepare_application_form_task(task_run_id: int, application_id: int) -> dict
             )
         )
         final_status = result.get("status", "needs_manual_action")
+        if result.get("final_url"):
+            application.url = result["final_url"]
+        if not should_continue_search(db, application.user_id):
+            final_status = "cancelled"
+            result["error"] = "Search run stopped by user"
+            result["logs"] = [
+                *(result.get("logs") or []),
+                {"timestamp": datetime.now(UTC).isoformat(), "level": "warning", "message": "Search run stopped by user"},
+            ]
         application.status = final_status
         if final_status == "applied":
             application.applied_at = datetime.now(UTC)

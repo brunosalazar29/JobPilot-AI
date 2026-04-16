@@ -3,9 +3,12 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Application, SearchRun
+from app.core.celery_app import celery_app
+from app.models import Application, SearchRun, TaskRun
 
 ACTIVE_APPLICATION_STATUSES = {"found", "matched", "queued", "preparing", "applying"}
+ACTIVE_TASK_STATUSES = {"queued", "running"}
+STOPPABLE_TASKS = {"cv_pipeline", "prepare_application_form"}
 
 
 def get_or_create_search_run(db: Session, user_id: int) -> SearchRun:
@@ -74,6 +77,33 @@ def start_search_run(db: Session, user_id: int, resume_id: int) -> SearchRun:
 
 def stop_search_run(db: Session, user_id: int) -> SearchRun:
     search_run = get_or_create_search_run(db, user_id)
+    active_tasks = list(
+        db.scalars(
+            select(TaskRun).where(
+                TaskRun.user_id == user_id,
+                TaskRun.task_name.in_(STOPPABLE_TASKS),
+                TaskRun.status.in_(ACTIVE_TASK_STATUSES),
+            )
+        )
+    )
+    for task_run in active_tasks:
+        if task_run.celery_task_id:
+            try:
+                celery_app.control.revoke(task_run.celery_task_id, terminate=True)
+            except Exception:
+                pass
+        task_run.status = "stopped"
+        task_run.completed_at = datetime.now(UTC)
+        task_run.logs = [
+            *(task_run.logs or []),
+            {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "level": "warning",
+                "message": "Search run stopped by user",
+            },
+        ]
+        db.add(task_run)
+
     active_applications = list(
         db.scalars(
             select(Application).where(

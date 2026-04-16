@@ -198,6 +198,7 @@ export default function DashboardPage() {
   const latestTaskSummary = latestPipeline ? summarizeTaskResult(latestPipeline) : null;
   const latestFailure = tasks.find((task) => task.status === "failed") ?? null;
   const readyToSearchMessage = "Tu CV ya fue analizado. Usa el boton de iniciar busqueda y postulacion cuando quieras.";
+  const hasActiveProcess = Boolean(parseTask || searchActive || activeApplication);
   const statusTitle = parseTask
     ? getTaskLabel(parseTask.task_name)
     : searchActive
@@ -431,6 +432,18 @@ export default function DashboardPage() {
                         <span className="font-medium text-slate-500">Ultimo cambio</span>
                         <span>{formatRelativeTime(application.created_at)}</span>
                       </div>
+                      {application.url ? (
+                        <div className="mt-3 flex justify-end">
+                          <a
+                            href={application.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sm font-semibold text-brand"
+                          >
+                            Abrir enlace manual
+                          </a>
+                        </div>
+                      ) : null}
                     </article>
                   ))}
                 </div>
@@ -452,9 +465,13 @@ export default function DashboardPage() {
             <div className="rounded-lg border border-line bg-slate-950 p-5 text-slate-100 shadow-panel">
               <div className="flex items-center gap-2">
                 <TerminalSquare className="h-5 w-5 text-emerald-300" />
-                <h2 className="font-semibold">Consola de actividad</h2>
+                <h2 className="font-semibold">{hasActiveProcess ? "Consola de actividad" : "Historial reciente"}</h2>
               </div>
-              <p className="mt-2 text-sm text-slate-400">Muestra lo ultimo que hizo el sistema, con hora y etapa.</p>
+              <p className="mt-2 text-sm text-slate-400">
+                {hasActiveProcess
+                  ? "Muestra lo ultimo que esta haciendo el sistema, con hora y etapa."
+                  : "No hay procesos activos. Lo que ves abajo es historial reciente, no trabajo en ejecucion."}
+              </p>
               <div className="mt-4 max-h-[420px] space-y-3 overflow-auto rounded-lg border border-slate-800 bg-slate-950/80 p-3">
                 {consoleEntries.length ? (
                   consoleEntries.map((entry) => (

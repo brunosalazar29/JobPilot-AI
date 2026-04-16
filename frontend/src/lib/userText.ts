@@ -204,7 +204,7 @@ export function getTaskCurrentMessage(task: TaskRun): string {
 }
 
 export function getManualActionGuidance(application: Application): string | null {
-  if (application.status !== "needs_manual_action") {
+  if (!["needs_manual_action", "ready_for_review", "failed"].includes(application.status)) {
     return null;
   }
   if (application.errors) {
@@ -319,6 +319,7 @@ export function translateLogMessage(message: string | null | undefined): string 
     "Reached external application form": "Se llegó al formulario real de postulación.",
     "Real application form prepared": "El formulario real quedó preparado.",
     "Final submission was not attempted automatically": "El sistema dejó el formulario listo, pero no envió la postulación automáticamente.",
+    "Real application form was not detected": "No se encontro un formulario real de postulacion en el enlace abierto.",
     "Missing job URL": "La vacante no tiene un enlace directo para continuar.",
     "Search run stopped by user": "La busqueda fue detenida por el usuario."
   };
