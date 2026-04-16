@@ -23,8 +23,11 @@ class Settings(BaseSettings):
     seed_demo_data: bool = Field(default=False, alias="SEED_DEMO_DATA")
     playwright_headless: bool = Field(default=True, alias="PLAYWRIGHT_HEADLESS")
     enable_mock_jobs: bool = Field(default=False, alias="ENABLE_MOCK_JOBS")
+    enable_arbeitnow_source: bool = Field(default=True, alias="ENABLE_ARBEITNOW_SOURCE")
     job_source_file: str | None = Field(default=None, alias="JOB_SOURCE_FILE")
     application_match_threshold: int = Field(default=55, alias="APPLICATION_MATCH_THRESHOLD")
+    auto_apply_enabled: bool = Field(default=True, alias="AUTO_APPLY_ENABLED")
+    auto_submit_applications: bool = Field(default=False, alias="AUTO_SUBMIT_APPLICATIONS")
 
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), env_file_encoding="utf-8", extra="ignore", populate_by_name=True)
 

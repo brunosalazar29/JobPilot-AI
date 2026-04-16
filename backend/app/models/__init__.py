@@ -4,6 +4,7 @@ from app.models.base import Base
 from app.models.job import Job, JobMatch
 from app.models.profile import Profile
 from app.models.resume import ParsedResume, Resume
+from app.models.search_run import SearchRun
 from app.models.task_run import TaskRun
 from app.models.user import User
 
@@ -17,6 +18,7 @@ __all__ = [
     "ParsedResume",
     "Profile",
     "Resume",
+    "SearchRun",
     "TaskRun",
     "User",
 ]

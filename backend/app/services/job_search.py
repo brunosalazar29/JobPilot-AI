@@ -1,5 +1,7 @@
 import json
 import re
+import urllib.error
+import urllib.request
 from hashlib import sha1
 from pathlib import Path
 from typing import Any
@@ -108,8 +110,60 @@ class LocalJsonJobSearchAdapter(JobSearchAdapter):
         )
 
 
+class ArbeitnowJobSearchAdapter(JobSearchAdapter):
+    source_name = "arbeitnow"
+    endpoint = "https://www.arbeitnow.com/api/job-board-api"
+
+    def search(self, filters: JobFilter) -> list[JobCreate]:
+        request = urllib.request.Request(self.endpoint, headers={"User-Agent": "Mozilla/5.0 JobPilotAI/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Arbeitnow source failed: {exc}") from exc
+
+        rows = payload.get("data", [])
+        if not isinstance(rows, list):
+            raise ValueError("Arbeitnow response did not return a jobs list")
+
+        jobs = [self._row_to_job(row) for row in rows if isinstance(row, dict)]
+        return [job for job in jobs if job_matches_filters(job, filters)]
+
+    def _row_to_job(self, row: dict[str, Any]) -> JobCreate:
+        title = str(row.get("title") or "").strip()
+        company = str(row.get("company_name") or "").strip()
+        description = str(row.get("description") or "").strip()
+        if not title or not company or not description:
+            raise ValueError("Arbeitnow row missing title/company/description")
+
+        remote_flag = bool(row.get("remote"))
+        location = str(row.get("location") or "Remote").strip()
+        url = str(row.get("url") or "").strip() or None
+        external_seed = str(row.get("slug") or url or f"{company}:{title}")
+        technologies = normalize_values(row.get("tags") or [])
+
+        return JobCreate(
+            source=self.source_name,
+            external_id=sha1(external_seed.encode("utf-8")).hexdigest(),
+            title=title,
+            company=company,
+            location=location,
+            seniority=infer_seniority_from_title(title),
+            remote_type="remote" if remote_flag else "onsite",
+            salary_min=None,
+            salary_max=None,
+            currency="USD",
+            technologies=technologies,
+            language_requirements=[],
+            description=description,
+            url=url,
+        )
+
+
 def configured_adapters() -> list[JobSearchAdapter]:
     adapters: list[JobSearchAdapter] = []
+    if settings.enable_arbeitnow_source:
+        adapters.append(ArbeitnowJobSearchAdapter())
     if settings.job_source_file:
         adapters.append(LocalJsonJobSearchAdapter(settings.job_source_file))
     if settings.enable_mock_jobs:
@@ -138,7 +192,10 @@ def upsert_jobs(db: Session, job_payloads: list[JobCreate]) -> list[Job]:
 def search_jobs(db: Session, filters: JobFilter) -> list[Job]:
     payloads: list[JobCreate] = []
     for adapter in configured_adapters():
-        payloads.extend(adapter.search(filters))
+        try:
+            payloads.extend(adapter.search(filters))
+        except Exception:
+            continue
     return upsert_jobs(db, payloads)
 
 
@@ -180,3 +237,16 @@ def job_matches_filters(job: JobCreate, filters: JobFilter) -> bool:
     if requested and available and not requested.intersection(available):
         return False
     return True
+
+
+def infer_seniority_from_title(title: str) -> str | None:
+    lowered = title.lower()
+    if any(keyword in lowered for keyword in ["lead", "staff", "principal", "head"]):
+        return "lead"
+    if any(keyword in lowered for keyword in ["senior", "sr"]):
+        return "senior"
+    if any(keyword in lowered for keyword in ["mid", "middle"]):
+        return "mid"
+    if any(keyword in lowered for keyword in ["junior", "jr", "intern", "trainee"]):
+        return "junior"
+    return None

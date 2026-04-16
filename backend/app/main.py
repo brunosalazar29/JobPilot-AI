@@ -1,11 +1,14 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import engine, ensure_database_exists
 from app.core.schema_upgrades import ensure_profile_detection_columns
 from app.models import Base
-from app.routers import applications, auth, documents, health, jobs, matches, profile, tasks
+from app.routers import applications, auth, documents, health, jobs, matches, profile, runs, tasks
 from app.utils.seed import seed_demo_data
 
 
@@ -26,7 +29,12 @@ app.include_router(documents.router)
 app.include_router(jobs.router)
 app.include_router(matches.router)
 app.include_router(applications.router)
+app.include_router(runs.router)
 app.include_router(tasks.router)
+
+storage_dir = Path("/app/storage")
+storage_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
 
 
 @app.on_event("startup")

@@ -130,3 +130,18 @@ export type TaskRun = {
   completed_at: string | null;
   created_at: string;
 };
+
+export type SearchRun = {
+  id: ID;
+  user_id: ID;
+  resume_id: ID | null;
+  status: string;
+  current_stage: string | null;
+  current_message: string | null;
+  last_error: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  last_event_at: string | null;
+  created_at: string;
+  updated_at: string;
+};

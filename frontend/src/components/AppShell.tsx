@@ -1,14 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import {
-  ClipboardList,
-  Gauge,
-  LogOut,
-  Menu,
-  Sparkles,
-  UserRound
-} from "lucide-react";
+import { ClipboardList, Gauge, LogOut, Menu, Sparkles, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -18,8 +11,8 @@ import { clearToken } from "@/lib/api";
 const navItems = [
   { href: "/dashboard", label: "Panel", icon: Gauge },
   { href: "/profile", label: "Perfil detectado", icon: UserRound },
-  { href: "/applications", label: "Cola", icon: ClipboardList },
-  { href: "/tasks", label: "Diagnóstico", icon: Sparkles }
+  { href: "/applications", label: "Seguimiento", icon: ClipboardList },
+  { href: "/tasks", label: "Actividad", icon: Sparkles }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

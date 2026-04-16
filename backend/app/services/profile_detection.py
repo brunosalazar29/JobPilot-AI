@@ -230,6 +230,8 @@ def calculate_completeness(profile: Profile) -> int:
 def normalize_value(value: Any) -> Any:
     if isinstance(value, str):
         value = value.strip()
+        if value.lower() in {"nada", "ninguno", "none", "null", "n/a", "na", "-", "sin dato"}:
+            return None
         return value or None
     if isinstance(value, list):
         return [item.strip() for item in value if isinstance(item, str) and item.strip()]

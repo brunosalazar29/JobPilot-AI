@@ -72,6 +72,12 @@ ROLE_KEYWORDS = [
     "desarrollador",
     "ingeniero de software",
     "analista de datos",
+    "analista programador",
+    "analista de sistemas",
+    "consultor ti",
+    "desarrollador full stack",
+    "desarrollador backend",
+    "soporte técnico",
 ]
 
 LOCATION_KEYWORDS = [
@@ -270,13 +276,59 @@ def infer_seniority(text: str) -> str | None:
 
 def infer_target_roles(text: str) -> list[str]:
     lowered = text.lower()
-    roles = [role.title() for role in ROLE_KEYWORDS if role in lowered]
+    roles = [normalize_role_label(role) for role in ROLE_KEYWORDS if role in lowered]
+
+    cargo_matches = re.findall(r"(?:cargo|puesto|position)\s*:\s*([^\n]+)", text, re.IGNORECASE)
+    roles.extend(normalize_role_label(match) for match in cargo_matches if match.strip())
+
+    headline_matches = re.findall(r"^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s/-]{6,}$", text, re.MULTILINE)
+    for headline in headline_matches[:3]:
+        cleaned = headline.strip(" -/")
+        if len(cleaned) > 45:
+            continue
+        if any(token in cleaned.lower() for token in ["cibertec", "salazar", "monroy", "informática"]):
+            continue
+        if any(token in cleaned.lower() for token in ["consultor", "analista", "developer", "engineer", "programador"]):
+            roles.append(normalize_role_label(cleaned))
+
+    if "angular" in lowered or "node.js" in lowered or "javascript" in lowered:
+        roles.append("Desarrollador Full Stack")
+    if "sql server" in lowered or "postgresql" in lowered or "c#" in lowered or "php" in lowered:
+        roles.append("Desarrollador Backend")
+    if "help desk" in lowered or "incidencias" in lowered or "soporte técnico" in lowered:
+        roles.append("Analista de Sistemas")
+
     if roles:
         return list(dict.fromkeys(roles))[:5]
 
     first_lines = " ".join(line.strip() for line in text.splitlines()[:8])
     fallback = re.findall(r"\b(?:developer|engineer|analyst|desarrollador|ingeniero|analista)\b", first_lines, re.IGNORECASE)
     return list(dict.fromkeys(item.title() for item in fallback))[:3]
+
+
+def normalize_role_label(value: str) -> str:
+    normalized = value.strip().strip(":-").lower()
+    replacements = {
+        "analista programador": "Analista Programador",
+        "analista de sistemas": "Analista de Sistemas",
+        "consultor ti": "Consultor TI",
+        "soporte técnico": "Soporte Técnico",
+        "software engineer": "Software Engineer",
+        "full stack engineer": "Full Stack Engineer",
+        "backend engineer": "Backend Engineer",
+        "frontend engineer": "Frontend Engineer",
+        "data engineer": "Data Engineer",
+        "data analyst": "Data Analyst",
+        "data scientist": "Data Scientist",
+        "devops engineer": "DevOps Engineer",
+        "machine learning engineer": "Machine Learning Engineer",
+        "project manager": "Project Manager",
+        "product manager": "Product Manager",
+        "qa engineer": "QA Engineer",
+        "desarrollador full stack": "Desarrollador Full Stack",
+        "desarrollador backend": "Desarrollador Backend",
+    }
+    return replacements.get(normalized, " ".join(word.capitalize() for word in normalized.split()))
 
 
 def extract_keywords(text: str, keywords: set[str]) -> list[str]:

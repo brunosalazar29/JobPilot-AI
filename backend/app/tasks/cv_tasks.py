@@ -5,6 +5,7 @@ from app.core.database import SessionLocal
 from app.models import ParsedResume, Resume, TaskRun
 from app.services.cv_parser import parse_resume_file
 from app.services.profile_detection import apply_cv_profile
+from app.services.search_run import get_or_create_search_run, update_search_run
 from app.services.task_logger import append_task_log, log_activity, mark_task_failed, mark_task_running, mark_task_success
 
 
@@ -43,6 +44,19 @@ def parse_resume_task(task_run_id: int, resume_id: int) -> dict:
         db.add(resume)
         db.commit()
 
+        search_run = get_or_create_search_run(db, resume.user_id)
+        if search_run.status != "running":
+            update_search_run(
+                db,
+                search_run,
+                status="idle",
+                stage="CV analizado",
+                message="Tu CV ya fue analizado. Ahora puedes iniciar la busqueda y postulacion.",
+                last_error=None,
+                resume_id=resume.id,
+                stopped_at=None,
+            )
+
         log_activity(
             db,
             user_id=resume.user_id,
@@ -69,6 +83,17 @@ def parse_resume_task(task_run_id: int, resume_id: int) -> dict:
             resume.error_message = str(exc)
             db.add(resume)
             db.commit()
+            search_run = get_or_create_search_run(db, resume.user_id)
+            if search_run.status != "running":
+                update_search_run(
+                    db,
+                    search_run,
+                    status="failed",
+                    stage="Analisis de CV fallido",
+                    message="No se pudo analizar el CV. Revisa el archivo y vuelve a intentarlo.",
+                    last_error=str(exc),
+                    resume_id=resume.id,
+                )
         if task_run is not None:
             mark_task_failed(db, task_run, str(exc))
         raise

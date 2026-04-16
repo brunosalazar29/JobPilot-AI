@@ -46,9 +46,9 @@ docker compose up --build
 3. Abre:
 
 - Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- Docs Swagger: http://localhost:8000/docs
-- Health: http://localhost:8000/health
+- Backend API: http://localhost:8011
+- Docs Swagger: http://localhost:8011/docs
+- Health: http://localhost:8011/health
 
 El backend crea la base `jobpilot_ai` automáticamente si no existe y, por defecto, crea tablas en desarrollo con SQLAlchemy. También hay una migración Alembic inicial.
 
@@ -118,7 +118,7 @@ npm install
 npm run dev
 ```
 
-Configura `NEXT_PUBLIC_API_URL=http://localhost:8000` si no usas Docker.
+Configura `NEXT_PUBLIC_API_URL=http://localhost:8011` si no usas Docker.
 
 ## Endpoints principales
 

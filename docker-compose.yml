@@ -43,7 +43,7 @@ services:
       APP_AUTO_CREATE_TABLES: "true"
       BACKEND_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT:-3000}"
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT:-8011}:8000"
     volumes:
       - ./backend/storage:/app/storage
     depends_on:

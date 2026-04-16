@@ -4,14 +4,14 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.dependencies import get_current_user
-from app.models import GeneratedDocument, Resume, TaskRun, User
+from app.models import GeneratedDocument, Resume, User
 from app.schemas.common import TaskAcceptedResponse
 from app.schemas.document import GeneratedDocumentCreate, GeneratedDocumentRead, ResumeRead
+from app.services.search_run import get_or_create_search_run
 from app.services.task_dispatch import dispatch_task
 from app.services.task_logger import create_task_run, log_activity
 from app.tasks.cv_tasks import parse_resume_task
 from app.tasks.document_tasks import generate_document_task
-from app.tasks.pipeline_tasks import cv_pipeline_task
 from app.utils.file_storage import save_upload_file
 
 
@@ -24,6 +24,13 @@ def upload_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Resume:
+    search_run = get_or_create_search_run(db, current_user.id)
+    if search_run.status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Deten la busqueda actual antes de cambiar tu CV.",
+        )
+
     path = save_upload_file(file, current_user.id)
     resume = Resume(
         user_id=current_user.id,
@@ -36,8 +43,8 @@ def upload_resume(
     db.commit()
     db.refresh(resume)
     log_activity(db, current_user.id, "resume", "uploaded", resume.original_filename, entity_id=resume.id)
-    task_run = create_task_run(db, current_user.id, "cv_pipeline", {"resume_id": resume.id, "auto_started": True})
-    dispatch_task(db, task_run, cv_pipeline_task, task_run.id, resume.id)
+    task_run = create_task_run(db, current_user.id, "parse_resume", {"resume_id": resume.id, "auto_started": True})
+    dispatch_task(db, task_run, parse_resume_task, task_run.id, resume.id)
     return resume
 
 

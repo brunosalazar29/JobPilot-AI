@@ -9,14 +9,14 @@ from app.schemas.job import JobRead
 APPLICATION_STATUSES = {
     "found",
     "matched",
-    "pending",
-    "running",
-    "prepared",
-    "ready_for_review",
+    "queued",
+    "preparing",
+    "applying",
     "applied",
     "failed",
-    "rejected",
     "needs_manual_action",
+    "paused",
+    "cancelled",
 }
 
 
