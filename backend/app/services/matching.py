@@ -75,7 +75,26 @@ def calculate_match(profile: Profile | None, parsed_resume: ParsedResume | None,
 
 
 def normalize_list(values: list[str]) -> list[str]:
-    return [value.strip().lower() for value in values if value and value.strip()]
+    return [canonical_skill(value) for value in values if value and canonical_skill(value)]
+
+
+def canonical_skill(value: str) -> str:
+    normalized = value.strip().lower()
+    replacements = {
+        "node.js": "nodejs",
+        "node js": "nodejs",
+        "angular.js": "angular",
+        "c#": "csharp",
+        "sql server": "sqlserver",
+        "codeigniter 3.0": "codeigniter",
+        "visual basic": "vb",
+        "rest api": "api",
+        "nost.js": "nodejs",
+        "pythn": "python",
+    }
+    normalized = replacements.get(normalized, normalized)
+    normalized = re.sub(r"[^a-z0-9+#.]", "", normalized)
+    return normalized
 
 
 def weighted_ratio(matches: int, total: int, weight: int) -> float:
